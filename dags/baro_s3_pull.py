@@ -25,6 +25,7 @@ def pull_from_s3():
 
 with DAG(
     dag_id="baro_s3_pull",
+    description="Git Sync 반영 테스트용 DAG",
     schedule=None,
     start_date=datetime(2026, 4, 1),
     catchup=False,
