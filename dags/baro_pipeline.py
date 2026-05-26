@@ -17,8 +17,10 @@ with DAG(
         task_id="fetch_vehicle_data",
         python_callable=fetch_vehicle_data,
     )
+    
+    t2 = PythonOperator(
+        task_id="train_and_generate_weight",
+        python_callable=train_and_generate_weight,
+    )
 
-    t1
-
-    # 나중에 추가
-    # t1 >> t2 >> t3
+    t1 >> t2
