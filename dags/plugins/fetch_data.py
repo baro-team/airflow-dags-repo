@@ -1,4 +1,4 @@
-from airflow.models import Variable
+from airflow.sdk import Variable
 import pandas as pd
 from sqlalchemy import create_engine
 from datetime import datetime, timedelta
@@ -15,7 +15,7 @@ def fetch_vehicle_data(**context):
     end   = yesterday.replace(hour=23, minute=59, second=59, microsecond=0)
 
     # 1. 어제 배차 요청 데이터 조회
-    dispatch_df = pd.read_sql("""
+    dispatch_df = pd.read_sql(f"""
         SELECT
             request_id,
             start_latitude,
@@ -28,9 +28,9 @@ def fetch_vehicle_data(**context):
                 THEN 1 ELSE 0
             END AS is_weekend
         FROM dispatch_request
-        WHERE requested_at BETWEEN :start AND :end
+        WHERE requested_at BETWEEN '{start}' AND '{end}'
           AND status = 'completed'
-    """, engine, params={"start": start, "end": end})
+    """, engine)
 
     if dispatch_df.empty:
         raise ValueError(
