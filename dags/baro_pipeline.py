@@ -16,7 +16,6 @@ with DAG(
     t1 = PythonOperator(
         task_id="fetch_vehicle_data",
         python_callable=fetch_vehicle_data,
-        provide_context=True,
     )
 
     t1
