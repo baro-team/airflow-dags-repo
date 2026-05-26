@@ -3,6 +3,7 @@ from airflow.operators.python import PythonOperator
 from datetime import datetime
 
 from plugins.fetch_data import fetch_vehicle_data
+from plugins.train_model import train_and_generate_weight
 
 with DAG(
     dag_id="baro_pipeline",
@@ -17,7 +18,7 @@ with DAG(
         task_id="fetch_vehicle_data",
         python_callable=fetch_vehicle_data,
     )
-    
+
     t2 = PythonOperator(
         task_id="train_and_generate_weight",
         python_callable=train_and_generate_weight,
