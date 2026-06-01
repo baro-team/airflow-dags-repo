@@ -234,15 +234,14 @@ def train_and_generate_weight(**context):
             (demand_df['weight'] - min_w) / (max_w - min_w)
         )
 
-    # 9. region_weight 테이블 저장
+    # 9. stand_weight 테이블 저장
     weight_df = demand_df[[
         'stand_id', 'time_zone', 'day_of_week', 'weight'
     ]].copy()
-    weight_df.rename(columns={'stand_id': 'region_id'}, inplace=True)
     weight_df['updated_at'] = datetime.now()
 
     weight_df.to_sql(
-        'region_weight',
+        'stand_weight',
         engine,
         if_exists='replace',
         index=False
