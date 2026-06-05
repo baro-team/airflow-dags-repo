@@ -4,6 +4,7 @@ from datetime import datetime
 
 from plugins.fetch_data import fetch_vehicle_data
 from plugins.train_model import train_and_generate_weight
+from plugins.send_weight import send_weight_to_public
 
 with DAG(
     dag_id="baro_pipeline",
