@@ -24,4 +24,9 @@ with DAG(
         python_callable=train_and_generate_weight,
     )
 
-    t1 >> t2
+    t3 = PythonOperator(
+        task_id="send_weight_to_public",
+        python_callable=send_weight_to_public,
+    )
+
+    t1 >> t2 >> t3
