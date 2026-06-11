@@ -235,8 +235,14 @@ def train_and_generate_weight(**context):
         )
 
     # 9. stand_weight 테이블 저장
+    demand_df = demand_df.merge(
+        stands_df[['id', 'latitude', 'longitude']], 
+        left_on='stand_id', 
+        right_on='id', 
+        how='left'
+    )
     weight_df = demand_df[[
-        'stand_id', 'time_zone', 'day_of_week', 'weight'
+        'stand_id', 'time_zone', 'day_of_week', 'weight', 'latitude', 'longitude'
     ]].copy()
     weight_df['updated_at'] = datetime.now()
 
