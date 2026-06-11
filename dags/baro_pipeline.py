@@ -1,6 +1,6 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from plugins.fetch_data import fetch_vehicle_data
 from plugins.train_model import train_and_generate_weight
@@ -28,6 +28,8 @@ with DAG(
     t3 = PythonOperator(
         task_id="send_weight_to_public",
         python_callable=send_weight_to_public,
+        retries=3,
+        retry_delay=timedelta(minutes=10),
     )
 
     t1 >> t2 >> t3
