@@ -40,12 +40,14 @@ def send_weight_to_public(**context):
     # 3. 전송할 데이터 형태로 변환
     weights = weight_df.to_dict(orient='records')
 
-    # 3. relocation-service로 전송
-    RELOCATION_URL = Variable.get("RELOCATION_URL")
+    # 3. relocation-service로 전송 (Internal ALB 사용)
+    INTERNAL_ALB_URL = Variable.get("INTERNAL_ALB_URL")
+    INTERNAL_API_KEY = Variable.get("INTERNAL_API_KEY")
 
     try:
         response = requests.post(
-            RELOCATION_URL,
+            f"{INTERNAL_ALB_URL}/internal/relocation/standWeights",
+            headers={"X-Internal-Api-Key": INTERNAL_API_KEY},
             json={"weights": weights},
             timeout=10
         )
@@ -57,7 +59,7 @@ def send_weight_to_public(**context):
 
     except requests.exceptions.ConnectionError:
         raise Exception(
-            f"[send_weight] relocation-service 연결 실패: {RELOCATION_URL}"
+            f"[send_weight] relocation-service 연결 실패: {INTERNAL_ALB_URL}"
         )
 
     except requests.exceptions.HTTPError as e:
