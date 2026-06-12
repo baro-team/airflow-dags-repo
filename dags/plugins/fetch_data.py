@@ -9,35 +9,35 @@ def fetch_vehicle_data(**context):
     DB_URL = Variable.get("DB_URL")
     engine = create_engine(DB_URL)
 
-    # 어제 날짜 기준
-    yesterday = datetime.now() - timedelta(days=1)
-    start = yesterday.replace(hour=0,  minute=0,  second=0,  microsecond=0)
-    end   = yesterday.replace(hour=23, minute=59, second=59, microsecond=0)
+    INTERNAL_ALB_URL = Variable.get("INTERNAL_ALB_URL")
+    INTERNAL_API_KEY = Variable.get("INTERNAL_API_KEY")
 
-    # 1. 어제 배차 요청 데이터 조회
-    dispatch_df = pd.read_sql(f"""
-        SELECT
-            request_id,
-            start_latitude,
-            start_longitude,
-            requested_at,
-            EXTRACT(hour FROM requested_at) AS hour,
-            EXTRACT(dow  FROM requested_at) AS day_of_week,
-            CASE
-                WHEN EXTRACT(dow FROM requested_at) IN (0, 6)
-                THEN 1 ELSE 0
-            END AS is_weekend
-        FROM dispatch_request
-        WHERE requested_at BETWEEN '{start}' AND '{end}'
-          AND status = 'completed'
-    """, engine)
+    print("[fetch_data] 배차 데이터 API 호출 시작")
+    import requests
+    import gzip
+    from io import BytesIO
+
+    response = requests.get(
+        f"{INTERNAL_ALB_URL}/internal/dispatch/export/daily",
+        headers={"X-Internal-Api-Key": INTERNAL_API_KEY},
+        timeout=60
+    )
+    response.raise_for_status()
+
+    with gzip.GzipFile(fileobj=BytesIO(response.content)) as f:
+        dispatch_df = pd.read_csv(f)
 
     if dispatch_df.empty:
-        raise ValueError(
-            f"[fetch_data] 어제({yesterday.date()}) 배차 요청 데이터가 없습니다"
-        )
+        raise ValueError("[fetch_data] 최근 24시간 배차 데이터가 없습니다")
 
-    print(f"[fetch_data] 배차 요청 조회 완료: {len(dispatch_df)}건")
+    # 파생 변수 생성
+    # 파생 변수 생성
+    dispatch_df['requested_at'] = pd.to_datetime(dispatch_df['requested_at'])
+    dispatch_df['hour'] = dispatch_df['requested_at'].dt.hour
+    dispatch_df['day_of_week'] = dispatch_df['requested_at'].dt.dayofweek
+    dispatch_df['is_weekend'] = dispatch_df['day_of_week'].isin([5, 6]).astype(int)
+
+    print(f"[fetch_data] 배차 요청 조회/처리 완료: {len(dispatch_df)}건")
 
     # 2. 승차대 데이터 조회
     stands_df = pd.read_sql("""
