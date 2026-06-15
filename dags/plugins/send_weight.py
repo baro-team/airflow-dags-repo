@@ -46,7 +46,7 @@ def send_weight_to_public(**context):
 
     try:
         response = requests.post(
-            f"{INTERNAL_ALB_URL}/internal/relocation/standWeights",
+            f"{INTERNAL_ALB_URL}/relocation/internal/relocation/standWeights",
             headers={"X-Internal-Api-Key": INTERNAL_API_KEY},
             json={"weights": weights},
             timeout=10
