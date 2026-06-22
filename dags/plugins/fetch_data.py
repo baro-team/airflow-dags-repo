@@ -30,7 +30,7 @@ def fetch_vehicle_data(**context):
     if dispatch_df.empty:
         raise ValueError("[fetch_data] 최근 24시간 배차 데이터가 없습니다")
 
-    # 1.5. 원본 데이터를 Private DB에 누적 저장
+    # 원본 데이터 Private DB에 저장
     dispatch_df['requested_at'] = pd.to_datetime(dispatch_df['requested_at'])
     
     columns_to_save = [
@@ -38,9 +38,8 @@ def fetch_vehicle_data(**context):
         'start_latitude', 'start_longitude', 
         'end_latitude', 'end_longitude', 'status'
     ]
-    # 실제 존재하는 컬럼만 선택해서 안전하게 저장
-    save_cols = [c for c in columns_to_save if c in dispatch_df.columns]
-    dispatch_df[save_cols].to_sql(
+
+    dispatch_df[columns_to_save].to_sql(
         'dispatch_request',
         engine,
         if_exists='append',
@@ -55,7 +54,7 @@ def fetch_vehicle_data(**context):
 
     print(f"[fetch_data] 배차 요청 조회/처리 완료: {len(dispatch_df)}건")
 
-    # 2. 승차대 데이터 조회
+    # 승차대 데이터 조회
     stands_df = pd.read_sql("""
         SELECT
             id,
@@ -68,7 +67,7 @@ def fetch_vehicle_data(**context):
 
     print(f"[fetch_data] 승차대 조회 완료: {len(stands_df)}건")
 
-    # 3. 다음 Task로 전달
+    # 다음 Task로 전달
     context['ti'].xcom_push(
         key='dispatch_data',
         value=dispatch_df.to_json()
