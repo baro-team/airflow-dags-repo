@@ -17,7 +17,10 @@ def send_weight_to_public(**context):
     print(f"[send_weight] 가중치 수신: {len(weight_df)}건")
 
 
-    # 3. 전송할 데이터 형태로 변환
+    # 3. 전송할 데이터 형태로 변환 (JSON 직렬화 에러 방지를 위해 시간 컬럼을 문자열로 변환)
+    if 'updated_at' in weight_df.columns:
+        weight_df['updated_at'] = weight_df['updated_at'].astype(str)
+        
     weights = weight_df.to_dict(orient='records')
 
     # 4. relocation-service로 전송
