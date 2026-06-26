@@ -1,169 +1,32 @@
 from airflow.sdk import Variable
 import pandas as pd
 import numpy as np
-from io import StringIO
 from xgboost import XGBRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sqlalchemy import create_engine
-from math import radians, sin, cos, sqrt, atan2
 from datetime import datetime
-
-
-# =============================================
-# 유틸 함수
-# =============================================
-
-def haversine(lat1, lng1, lat2, lng2):
-    """두 좌표 간 거리 계산 (km)"""
-    R = 6371
-    dlat = radians(lat2 - lat1)
-    dlng = radians(lng2 - lng1)
-    a = (sin(dlat / 2) ** 2
-         + cos(radians(lat1))
-         * cos(radians(lat2))
-         * sin(dlng / 2) ** 2)
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
-
-
-def find_nearest_stand(lat, lng, stands_df):
-    """가장 가까운 승차대 찾기"""
-    min_dist = float('inf')
-    nearest_id = None
-
-    for _, stand in stands_df.iterrows():
-        dist = haversine(
-            lat, lng,
-            stand['latitude'],
-            stand['longitude']
-        )
-        if dist < min_dist:
-            min_dist = dist
-            nearest_id = stand['id']
-
-    return nearest_id
-
-
-def get_time_zone(hour):
-    """시간대 구분
-    0: 출근 (07~09시)
-    1: 낮   (10~16시)
-    2: 퇴근 (17~20시)
-    3: 저녁 (21~23시)
-    4: 심야 (00~06시)
-    """
-    if 7  <= hour <= 9:  return 0
-    if 10 <= hour <= 16: return 1
-    if 17 <= hour <= 20: return 2
-    if 21 <= hour <= 23: return 3
-    return 4
-
-
-# =============================================
-# 전처리 함수
-# =============================================
-
-def preprocess(dispatch_df, stands_df):
-    """
-    1. 결측값 처리
-    2. 이상치 처리
-    3. 승차대 매핑
-    4. 시간대 변환
-    5. 수요 집계
-    """
-
-    # 1. 결측값 처리
-    before = len(dispatch_df)
-    dispatch_df = dispatch_df.dropna(
-        subset=['start_latitude', 'start_longitude']
-    )
-    after = len(dispatch_df)
-    if before != after:
-        print(f"[전처리] 결측값 제거: {before - after}건")
-
-    # 2. 위경도 범위 이상치 제거 (서울 범위)
-    before = len(dispatch_df)
-    dispatch_df = dispatch_df[
-        dispatch_df['start_latitude'].between(37.4, 37.7) &
-        dispatch_df['start_longitude'].between(126.8, 127.2)
-    ]
-    after = len(dispatch_df)
-    if before != after:
-        print(f"[전처리] 위경도 이상치 제거: {before - after}건")
-
-    # 3. 가장 가까운 승차대 매핑
-    dispatch_df['stand_id'] = dispatch_df.apply(
-        lambda row: find_nearest_stand(
-            row['start_latitude'],
-            row['start_longitude'],
-            stands_df
-        ), axis=1
-    )
-    print("[전처리] 승차대 매핑 완료")
-
-    # 4. 시간대 변환 (hour → time_zone)
-    dispatch_df['time_zone'] = dispatch_df['hour'].apply(get_time_zone)
-
-    # 5. 승차대별 시간대별 수요 집계
-    demand_df = dispatch_df.groupby(
-        ['stand_id', 'time_zone', 'day_of_week', 'is_weekend']
-    ).size().reset_index(name='demand')
-
-    # 6. 수요 이상치 제거 (IQR)
-    Q1  = demand_df['demand'].quantile(0.25)
-    Q3  = demand_df['demand'].quantile(0.75)
-    IQR = Q3 - Q1
-    before = len(demand_df)
-    demand_df = demand_df[
-        demand_df['demand'].between(
-            Q1 - 1.5 * IQR,
-            Q3 + 1.5 * IQR
-        )
-    ]
-    after = len(demand_df)
-    if before != after:
-        print(f"[전처리] 수요 이상치 제거: {before - after}건")
-
-    print(f"[전처리] 완료: {len(demand_df)}건")
-    return demand_df
-
-
-# =============================================
-# 메인 Task 함수
-# =============================================
 
 def train_and_generate_weight(**context):
     DB_URL = Variable.get("DB_URL")
     engine = create_engine(DB_URL)
 
-    # 1. fetch_data에서 데이터 받기
-    dispatch_json = context['ti'].xcom_pull(
-        task_ids='fetch_vehicle_data',
-        key='dispatch_data'
-    )
-    stands_json = context['ti'].xcom_pull(
-        task_ids='fetch_vehicle_data',
-        key='stands_data'
-    )
+    print("[train_model] DB에서 가공된 데이터 조회 시작")
 
-    if not dispatch_json or not stands_json:
-        raise ValueError(
-            "[train_model] fetch_data에서 데이터를 받지 못했습니다"
-        )
+    # 1. DB에서 가공 완료된 demand_aggregated 조회
+    demand_df = pd.read_sql("SELECT * FROM demand_aggregated", engine)
+    
+    # 2. DB에서 승차대 정보 조회 (결과 저장 시 조인용)
+    stands_df = pd.read_sql("SELECT id, latitude, longitude FROM taxi_stands", engine)
 
-    dispatch_df = pd.read_json(StringIO(dispatch_json))
-    stands_df   = pd.read_json(StringIO(stands_json))
+    if demand_df.empty:
+        print("[train_model] 학습할 데이터가 없습니다 (demand_aggregated 비어있음)")
+        return
 
-    print(f"[train_model] 배차 요청 수신: {len(dispatch_df)}건")
-    print(f"[train_model] 승차대 수신: {len(stands_df)}건")
-
-    # 2. 전처리
-    demand_df = preprocess(dispatch_df, stands_df)
+    print(f"[train_model] 집계 데이터 수신 완료: {len(demand_df)}건")
 
     # 3. feature / target 분리
-    # stand_id 인코딩 (XGBoost는 문자열 못 받음)
-    demand_df['stand_id_encoded'] = pd.factorize(
-        demand_df['stand_id']
-    )[0]
+    # stand_id 인코딩
+    demand_df['stand_id_encoded'] = pd.factorize(demand_df['stand_id'])[0]
 
     feature_cols = [
         'time_zone',
@@ -176,8 +39,6 @@ def train_and_generate_weight(**context):
     y = demand_df['demand']
 
     # 4. 데이터 분리 (시계열 분리)
-    # 데이터가 적을 때는 전체로 학습
-    # 데이터가 충분할 때는 시계열 분리 사용
     if len(demand_df) < 50:
         print(f"[train_model] 데이터 부족({len(demand_df)}건) → 전체 학습")
         X_train, y_train = X, y
@@ -193,7 +54,6 @@ def train_and_generate_weight(**context):
         print(f"[train_model] 시계열 분리 → 학습: {len(X_train)}건, 검증: {len(X_test)}건")
 
     # 5. XGBoost 학습
-    # 데이터 적을 때는 단순한 모델 사용
     model = XGBRegressor(
         n_estimators=100,
         max_depth=4,
@@ -236,7 +96,7 @@ def train_and_generate_weight(**context):
 
     # 9. stand_weight 테이블 저장
     demand_df = demand_df.merge(
-        stands_df[['id', 'latitude', 'longitude']], 
+        stands_df, 
         left_on='stand_id', 
         right_on='id', 
         how='left'
@@ -252,7 +112,18 @@ def train_and_generate_weight(**context):
         if_exists='replace',
         index=False
     )
-    print(f"[train_model] 가중치 저장 완료: {len(weight_df)}건")
+
+    # 히스토리 보존을 위해 stand_weight_history 테이블에 누적 저장
+    history_df = weight_df.copy()
+    history_df.rename(columns={'updated_at': 'created_at'}, inplace=True)
+    history_df.to_sql(
+        'stand_weight_history',
+        engine,
+        if_exists='append',
+        index=False
+    )
+
+    print(f"[train_model] 가중치 및 히스토리 저장 완료: {len(weight_df)}건")
 
     # 10. 다음 Task로 전달
     context['ti'].xcom_push(
