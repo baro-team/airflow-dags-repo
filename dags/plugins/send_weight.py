@@ -16,11 +16,6 @@ def send_weight_to_public(**context):
 
     print(f"[send_weight] 가중치 수신: {len(weight_df)}건")
 
-    # 2. Private DB에 가중치 누적 저장
-    history_df = weight_df.copy()
-    history_df['created_at'] = datetime.now()
-    history_df.to_sql('stand_weight_history', engine, if_exists='append', index=False)
-    print(f"[send_weight] Private DB 누적 저장 완료: {len(history_df)}건")
 
     # 3. 전송할 데이터 형태로 변환
     weights = weight_df.to_dict(orient='records')
